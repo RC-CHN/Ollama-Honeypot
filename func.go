@@ -1,12 +1,16 @@
 package main
 
 import (
+	"cmp"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,7 +45,7 @@ func ShowHandler(c *gin.Context) {
 		return
 	}
 	// resp, err := GetModelInfo(req) //实现过于复杂，没空把模型结构parse出来
-	if req.Model != "deepseek-r1:latest" {
+	if _, found := modelNameMap[req.Model]; !found {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("model '%s' not found", req.Model)})
 		return
 	}
@@ -80,19 +84,13 @@ func ListHandler(c *gin.Context) {
 	models := []ListModelResponse{}
 
 	// tag should never be masked
-	models = append(models, ListModelResponse{
-		Model:      "deepseek-r1:671b",
-		Name:       "deepseek-r1:671b",
-		Size:       int64(404430188519),
-		Digest:     "739e1b229ad7f02d88c5ea4a7d3fda19f7b46170c233024025feeaa6338b9a46",
-		ModifiedAt: time.Now().Add(-1 * time.Hour),
-		Details: ModelDetails{
-			Format:            "gguf",
-			Family:            "deepseek2",
-			Families:          []string{"deepseek2"},
-			ParameterSize:     "671.0B",
-			QuantizationLevel: "Q4_K_M",
-		},
+	for _, item := range modelList {
+		models = append(models, item)
+	}
+
+	slices.SortStableFunc(models, func(i, j ListModelResponse) int {
+		// most recently modified first
+		return cmp.Compare(j.ModifiedAt.Unix(), i.ModifiedAt.Unix())
 	})
 
 	c.JSON(http.StatusOK, ListResponse{Models: models})
@@ -101,24 +99,26 @@ func ListHandler(c *gin.Context) {
 func PsHandler(c *gin.Context) {
 	models := []ProcessModelResponse{}
 
-	modelDetails := ModelDetails{
-		Format:            "gguf",
-		Family:            "deepseek2",
-		Families:          []string{"deepseek2"},
-		ParameterSize:     "671.0B",
-		QuantizationLevel: "Q4_K_M",
+	for _, item := range modelList {
+		nBig, _ := rand.Int(rand.Reader, big.NewInt(10))
+		randomMinutes := nBig.Int64() + 1
+
+		mr := ProcessModelResponse{
+			Model:     item.Model,
+			Name:      item.Name,
+			Size:      int64(item.Size),
+			SizeVRAM:  int64(item.Size),
+			Digest:    item.Digest,
+			Details:   item.Details,
+			ExpiresAt: time.Now().Add(time.Duration(randomMinutes) * time.Minute),
+		}
+		models = append(models, mr)
 	}
 
-	mr := ProcessModelResponse{
-		Model:     "deepseek-r1:671b",
-		Name:      "deepseek-r1:671b",
-		Size:      int64(404430188519),
-		SizeVRAM:  int64(404430188519),
-		Digest:    "739e1b229ad7f02d88c5ea4a7d3fda19f7b46170c233024025feeaa6338b9a46",
-		Details:   modelDetails,
-		ExpiresAt: time.Now().Add(1 * time.Hour),
-	}
-	models = append(models, mr)
+	slices.SortStableFunc(models, func(i, j ProcessModelResponse) int {
+		// longest duration remaining listed first
+		return cmp.Compare(j.ExpiresAt.Unix(), i.ExpiresAt.Unix())
+	})
 
 	c.JSON(http.StatusOK, ProcessResponse{Models: models})
 }
@@ -143,7 +143,7 @@ func GenerateHandler(c *gin.Context) {
 		return
 	}
 
-	if req.Model != "deepseek-r1:671b" {
+	if _, found := modelNameMap[req.Model]; !found {
 		// Ideally this is "invalid model name" but we're keeping with
 		// what the API currently returns until we can change it.
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("model '%s' not found", req.Model)})
@@ -197,7 +197,7 @@ func ChatHandler(c *gin.Context) {
 		return
 	}
 	if len(req.Messages) == 0 && req.KeepAlive != nil && int(req.KeepAlive.Seconds()) == 0 {
-		if req.Model != "deepseek-r1:671b" {
+		if _, found := modelNameMap[req.Model]; !found {
 			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("model '%s' not found", req.Model)})
 			return
 		}
@@ -223,7 +223,7 @@ func ChatHandler(c *gin.Context) {
 		caps = append(caps, CapabilityTools)
 	}
 
-	if req.Model != "deepseek-r1:671b" {
+	if _, found := modelNameMap[req.Model]; !found {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "model is required"})
 		return
 	}
