@@ -1,7 +1,9 @@
-# Ollama-Honeypot
-The Honeypot of Ollama
+# Ollama-Honeypot 蜜罐
+The Honeypot of Ollama 
 
-Inference API均已经实现
+chat/completions的 Inference API均已经实现
+
+Ollama和OpenAI兼容的查询格式都可以正常使用
 
 ```
 
@@ -30,5 +32,6 @@ Inference API均已经实现
 
 模型名字统一是**deepseek-reasoner**，vllm启动参数设置`--served-model-name deepseek-reasoner`即可
 
+> 可以整点挂羊头卖狗肉的操作
 
 ![效果展示](assets/893b4ed6c2a11a2fbd5466fae5ee318c.png)
