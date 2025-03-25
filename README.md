@@ -24,4 +24,4 @@ Inference API均已经实现
 
 可以使用OAI和Ollama的API接口进行“推理”
 
-![效果展示](893b4ed6c2a11a2fbd5466fae5ee318c.png)
+![效果展示](assets/893b4ed6c2a11a2fbd5466fae5ee318c.png)
