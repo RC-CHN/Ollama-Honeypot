@@ -231,8 +231,16 @@ func ChatHandler(c *gin.Context) {
 	ch := make(chan any)
 
 	baseURL := os.Getenv("OPENAI_BASE_URL") // 没设置BASE URL 只会回复fake
+	if baseURL == "" {
+		fmt.Println("no baseurl")
+	}
 
-	if temp_Length > 100 || baseURL == "" {
+	nBig, _ := rand.Int(rand.Reader, big.NewInt(100000))
+	randomReject := nBig.Int64() + 1
+
+	if temp_Length > 4096 || baseURL == "" {
+		go fake_resp(req, ch, checkpointStart, checkpointLoaded)
+	} else if temp_Length > 1024 && randomReject%2 == 0 { // 繁忙一些请求
 		go fake_resp(req, ch, checkpointStart, checkpointLoaded)
 	} else {
 		go oai_resp(c, req, ch, checkpointStart, checkpointLoaded)
