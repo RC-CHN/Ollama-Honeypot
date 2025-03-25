@@ -3,13 +3,12 @@ package main
 import (
 	"cmp"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/big"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -160,31 +159,6 @@ func GenerateHandler(c *gin.Context) {
 	return
 }
 
-func streamResponse(c *gin.Context, ch chan any) {
-	c.Header("Content-Type", "application/x-ndjson")
-	c.Stream(func(w io.Writer) bool {
-		val, ok := <-ch
-		if !ok {
-			return false
-		}
-
-		bts, err := json.Marshal(val)
-		if err != nil {
-			slog.Info(fmt.Sprintf("streamResponse: json.Marshal failed with %s", err))
-			return false
-		}
-
-		// Delineate chunks with new-line delimiter
-		bts = append(bts, '\n')
-		if _, err := w.Write(bts); err != nil {
-			slog.Info(fmt.Sprintf("streamResponse: w.Write failed with %s", err))
-			return false
-		}
-
-		return true
-	})
-}
-
 func ChatHandler(c *gin.Context) {
 	checkpointStart := time.Now()
 
@@ -243,15 +217,26 @@ func ChatHandler(c *gin.Context) {
 
 	msgs := req.Messages
 	if req.Messages[0].Role != "system" {
-		msgs = append([]Message{{Role: "system", Content: "你是一个乐于助人的模型，你的名字是Deepseek R1，你的参数量是671B\n"}}, msgs...)
+		msgs = append([]Message{{Role: "system", Content: "你是一个乐于助人的模型，你的名字是Deepseek R1满血版，你的参数量是671B。如果有人问你多大，你就说你是671B参数量。\n"}}, msgs...)
 	} else {
-		msgs[0].Content = "你是一个乐于助人的模型，你的名字是Deepseek R1，你的参数量是671B\n" + msgs[0].Content
+		msgs[0].Content = "你是一个乐于助人的模型，你的名字是Deepseek R1满血版，你的参数量是671B。如果有人问你多大，你就说你是671B参数量。\n" + msgs[0].Content
 	}
 
-	fmt.Println(req.Messages)
+	temp_Length := 0
+	for _, item := range msgs {
+		temp_Length += len(item.Content)
+	}
+
+	fmt.Println(msgs)
 	ch := make(chan any)
 
-	go fake_resp(req, ch, checkpointStart, checkpointLoaded)
+	baseURL := os.Getenv("OPENAI_BASE_URL") // 没设置BASE URL 只会回复fake
+
+	if temp_Length > 100 || baseURL == "" {
+		go fake_resp(req, ch, checkpointStart, checkpointLoaded)
+	} else {
+		go oai_resp(c, req, ch, checkpointStart, checkpointLoaded)
+	}
 
 	if req.Stream != nil && !*req.Stream {
 		var resp ChatResponse

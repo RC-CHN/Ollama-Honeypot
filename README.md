@@ -24,4 +24,11 @@ Inference API均已经实现
 
 可以使用OAI和Ollama的API接口进行“推理”
 
+`baseURL := os.Getenv("OPENAI_BASE_URL") // 没设置BASE URL 只会回复fake`
+
+`export OPENAI_BASE_URL=http://127.0.0.1:8000/v1/`
+
+模型名字统一是**deepseek-reasoner**，vllm启动参数设置`--served-model-name deepseek-reasoner`即可
+
+
 ![效果展示](assets/893b4ed6c2a11a2fbd5466fae5ee318c.png)
