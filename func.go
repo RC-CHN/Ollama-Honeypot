@@ -49,8 +49,10 @@ func ShowHandler(c *gin.Context) {
 		return
 	}
 	// case err.Error() == errtypes.InvalidModelNameErrMsg:
+	// c.JSON(http.StatusBadRequest, gin.H{"error": "invalid model name"})
 
-	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid model name"})
+	resp := modelNameMap[req.Model]["show"]
+	c.JSON(http.StatusOK, resp)
 	return
 
 	// c.JSON(http.StatusOK, resp)
