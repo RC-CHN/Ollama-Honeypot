@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -175,4 +176,33 @@ func streamResponse(c *gin.Context, ch chan any) {
 
 		return true
 	})
+}
+
+func waitForStream(c *gin.Context, ch chan interface{}) {
+	c.Header("Content-Type", "application/json")
+	for resp := range ch {
+		switch r := resp.(type) {
+		case ProgressResponse:
+			if r.Status == "success" {
+				c.JSON(http.StatusOK, r)
+				return
+			}
+		case gin.H:
+			status, ok := r["status"].(int)
+			if !ok {
+				status = http.StatusInternalServerError
+			}
+			if errorMsg, ok := r["error"].(string); ok {
+				c.JSON(status, gin.H{"error": errorMsg})
+				return
+			} else {
+				c.JSON(status, gin.H{"error": "unexpected error format in progress response"})
+				return
+			}
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected progress response"})
+			return
+		}
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected end of progress response"})
 }

@@ -17,13 +17,72 @@ import (
 )
 
 func PullHandler(c *gin.Context) {
-	c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "missing request body"})
+	// c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "missing request body"})
+
+	var req PullRequest
+	err := c.ShouldBindJSON(&req)
+	switch {
+	case errors.Is(err, io.EOF):
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "missing request body"})
+		return
+	case err != nil:
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	name := ParseName(cmp.Or(req.Model, req.Name))
+	if !name.IsValid() {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid model name"})
+		return
+	}
+
+	// name, err = getExistingName(name)
+	// if err != nil {
+	// 	c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 	return
+	// }
+
+	ch := make(chan any)
+	go func() {
+		defer close(ch)
+
+		r := ProgressResponse{Status: "pulling manifest"}
+		ch <- r
+
+		for i := range 10000 {
+			r = ProgressResponse{
+				Status:    fmt.Sprintf("pulling %s", "dde5aa3fc5ff"),                          //opts.digest[7:19]
+				Digest:    "dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff", //opts.digest,
+				Total:     int64(2019377376),
+				Completed: int64(i),
+			}
+			ch <- r
+		}
+
+		r = ProgressResponse{Status: "verifying sha256 digest"}
+		ch <- r
+
+		r = ProgressResponse{Status: "writing manifest"}
+		ch <- r
+
+		r = ProgressResponse{Status: "success"}
+		ch <- r
+	}()
+
+	if req.Stream != nil && !*req.Stream {
+		waitForStream(c, ch)
+		return
+	}
+
+	streamResponse(c, ch)
 	return
 }
+
 func PushHandler(c *gin.Context) {
 	c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "model is required"})
 	return
 }
+
 func ShowHandler(c *gin.Context) {
 	var req ShowRequest
 	err := c.ShouldBindJSON(&req)
