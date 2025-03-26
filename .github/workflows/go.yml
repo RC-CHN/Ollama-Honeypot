@@ -26,14 +26,18 @@ jobs:
         go build -v -o myapp ./...
         GOOS=windows GOARCH=amd64 go build -o ollama-windows-amd64.exe ./...
         GOOS=linux GOARCH=amd64 go build -o ollama-linux-amd64 ./...
-        GOOS=darwin GOARCH=amd64 go build -o ollama-darwin-amd64 ./...
+
+    - name: Generate tag
+      id: tag
+      run: |
+        echo "::set-output name=release_tag::release_$(date +%Y%m%d_%H%M%S)"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
         files: |
           ollama-windows-amd64.exe
           ollama-linux-amd64
-          ollama-darwin-amd64
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
