@@ -97,10 +97,11 @@ func ListHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, ListResponse{Models: models})
 }
 
+// 这个正常机器上不会加载这么多
 func PsHandler(c *gin.Context) {
 	models := []ProcessModelResponse{}
 
-	for _, item := range modelList {
+	for _, item := range modelList[:1] {
 		nBig, _ := rand.Int(rand.Reader, big.NewInt(10))
 		randomMinutes := nBig.Int64() + 1
 

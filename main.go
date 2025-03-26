@@ -43,8 +43,8 @@ func main() {
 	// General
 	r.HEAD("/", func(c *gin.Context) { c.String(http.StatusOK, "Ollama is running") })
 	r.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "Ollama is running") })
-	r.HEAD("/api/version", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"version": "0.6.2"}) }) //version.Version
-	r.GET("/api/version", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"version": "0.6.2"}) })  // version.Version
+	r.HEAD("/api/version", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"version": "0.6.0"}) }) //version.Version
+	r.GET("/api/version", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"version": "0.6.0"}) })  // version.Version
 
 	// Local model cache management (new implementation is at end of function)
 	r.POST("/api/pull", PullHandler)
