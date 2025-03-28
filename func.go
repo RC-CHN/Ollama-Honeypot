@@ -157,10 +157,11 @@ func ListHandler(c *gin.Context) {
 }
 
 // 这个正常机器上不会加载这么多
+// 应该就[]
 func PsHandler(c *gin.Context) {
 	models := []ProcessModelResponse{}
 
-	for _, item := range modelList[:1] {
+	for _, item := range modelList[:0] {
 		nBig, _ := rand.Int(rand.Reader, big.NewInt(10))
 		randomMinutes := nBig.Int64() + 1
 
