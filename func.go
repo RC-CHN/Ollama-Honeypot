@@ -290,7 +290,7 @@ func ChatHandler(c *gin.Context) {
 		temp_Length += len(item.Content)
 	}
 
-	fmt.Println(msgs)
+	fmt.Println(req.Model, msgs)
 	ch := make(chan any)
 
 	baseURL := os.Getenv("OPENAI_BASE_URL") // 没设置BASE URL 只会回复fake
@@ -329,6 +329,7 @@ func ChatHandler(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected response"})
 				return
 			}
+			time.Sleep(100 * time.Millisecond) // 忘记非流式的返回了
 		}
 
 		resp.Message.Content = sb.String()
