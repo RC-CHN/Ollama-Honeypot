@@ -195,7 +195,10 @@ func EmbeddingsHandler(c *gin.Context) {
 	return
 }
 
+var system_prompt = "你是一个乐于助人的模型，你的名字是Deepseek R1满血版，你的参数量是671B。如果有人问你多大，你就说你是671B参数量。\n"
+
 func GenerateHandler(c *gin.Context) {
+	checkpointStart := time.Now()
 	var req GenerateRequest
 	if err := c.ShouldBindJSON(&req); errors.Is(err, io.EOF) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "missing request body"})
@@ -211,17 +214,84 @@ func GenerateHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("model '%s' not found", req.Model)})
 		return
 	}
+	checkpointLoaded := time.Now()
 
-	time.Sleep(5 * time.Second)
+	// expire the runner
+	if req.Prompt == "" && req.KeepAlive != nil && int(req.KeepAlive.Seconds()) == 0 {
+		c.JSON(http.StatusOK, GenerateResponse{
+			Model:      req.Model,
+			CreatedAt:  time.Now().UTC(),
+			Response:   "",
+			Done:       true,
+			DoneReason: "unload",
+		})
+		return
+	}
 
-	c.JSON(http.StatusOK, GenerateResponse{
-		Model:      req.Model,
-		CreatedAt:  time.Now().UTC(),
-		Response:   "服务器繁忙，请稍后再试。",
-		Done:       true,
-		DoneReason: "stop",
-	})
-	return
+	if req.Raw && (req.Template != "" || req.System != "" || len(req.Context) > 0) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "raw mode does not support template, system, or context"})
+		return
+	}
+
+	msgs := []Message{}
+	if !req.Raw {
+		msgs = append(msgs, Message{Role: "system", Content: system_prompt})
+		msgs = append(msgs, Message{Role: "user", Content: req.Prompt})
+	}
+
+	temp_Length := 0
+	for _, item := range msgs {
+		temp_Length += len(item.Content)
+	}
+
+	fmt.Println(req.Model, msgs)
+	ch := make(chan any)
+
+	baseURL := os.Getenv("OPENAI_BASE_URL") // 没设置BASE URL 只会回复fake
+	if baseURL == "" {
+		fmt.Println("no baseurl")
+	}
+
+	nBig, _ := rand.Int(rand.Reader, big.NewInt(100000))
+	randomReject := nBig.Int64() + 1
+
+	if temp_Length > 4096 || baseURL == "" {
+		go fake_resp_gen(req, msgs, ch, checkpointStart, checkpointLoaded)
+	} else if temp_Length > 1024 && randomReject%2 == 0 { // 繁忙一些请求
+		go fake_resp_gen(req, msgs, ch, checkpointStart, checkpointLoaded)
+	} else {
+		go oai_resp_gen(c, req, msgs, ch, checkpointStart, checkpointLoaded)
+	}
+
+	if req.Stream == nil || !*req.Stream { //原始逻辑可能有问题 if req.Stream != nil && !*req.Stream {
+		var resp GenerateResponse
+		var sb strings.Builder
+		for rr := range ch {
+			switch t := rr.(type) {
+			case GenerateResponse:
+				sb.WriteString(t.Response)
+				resp = t
+			case gin.H:
+				msg, ok := t["error"].(string)
+				if !ok {
+					msg = "unexpected error format in response"
+				}
+
+				c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+				return
+			default:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected response"})
+				return
+			}
+			time.Sleep(100 * time.Millisecond) // 忘记非流式的返回了
+		}
+
+		resp.Response = sb.String()
+
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+	streamResponse(c, ch)
 }
 
 func ChatHandler(c *gin.Context) {
@@ -282,9 +352,9 @@ func ChatHandler(c *gin.Context) {
 
 	msgs := req.Messages
 	if req.Messages[0].Role != "system" {
-		msgs = append([]Message{{Role: "system", Content: "你是一个乐于助人的模型，你的名字是Deepseek R1满血版，你的参数量是671B。如果有人问你多大，你就说你是671B参数量。\n"}}, msgs...)
+		msgs = append([]Message{{Role: "system", Content: system_prompt}}, msgs...)
 	} else {
-		msgs[0].Content = "你是一个乐于助人的模型，你的名字是Deepseek R1满血版，你的参数量是671B。如果有人问你多大，你就说你是671B参数量。\n" + msgs[0].Content
+		msgs[0].Content = system_prompt + msgs[0].Content
 	}
 
 	temp_Length := 0

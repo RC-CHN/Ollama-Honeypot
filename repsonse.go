@@ -51,6 +51,42 @@ func fake_resp(req ChatRequest, ch chan any, checkpointStart, checkpointLoaded t
 	ch <- res
 }
 
+// 假的回复
+func fake_resp_gen(req GenerateRequest, msgs []Message, ch chan any, checkpointStart, checkpointLoaded time.Time) {
+	defer close(ch)
+	aaa := []rune("服务器繁忙，请稍后再试。")
+	for _, aaaa := range aaa {
+		res := GenerateResponse{
+			Model:      req.Model,
+			CreatedAt:  time.Now().UTC(),
+			Response:   string(aaaa),
+			Done:       false,
+			DoneReason: "",
+			Metrics: Metrics{
+				PromptEvalCount:    len(msgs[1].Content),
+				PromptEvalDuration: 0 * time.Millisecond,
+				EvalCount:          2,
+				EvalDuration:       100 * time.Millisecond,
+			},
+		}
+		ch <- res
+	}
+	res := GenerateResponse{
+		Model:      req.Model,
+		CreatedAt:  time.Now().UTC(),
+		Response:   "",
+		Done:       true,
+		DoneReason: "stop",
+		Metrics: Metrics{
+			PromptEvalCount:    100,
+			PromptEvalDuration: time.Since(checkpointStart),
+			EvalCount:          1000,
+			EvalDuration:       checkpointLoaded.Sub(checkpointStart),
+		},
+	}
+	ch <- res
+}
+
 // 延迟输出的操作需要统一集中在stream response中
 
 func oai_resp(c *gin.Context, req ChatRequest, ch chan any, checkpointStart, checkpointLoaded time.Time) {
@@ -114,15 +150,6 @@ func oai_resp(c *gin.Context, req ChatRequest, ch chan any, checkpointStart, che
 			// return
 		}
 
-		// // if using tool calls
-		// if tool, ok := acc.JustFinishedToolCall(); ok {
-		// 	println("Tool call stream finished:", tool.Index, tool.Name, tool.Arguments)
-		// }
-
-		// if refusal, ok := acc.JustFinishedRefusal(); ok {
-		// 	println("Refusal stream finished:", refusal)
-		// }
-
 		// it's best to use chunks after handling JustFinished events
 		if len(chunk.Choices) > 0 {
 			// println(chunk.Choices[0].Delta.Content)
@@ -130,6 +157,96 @@ func oai_resp(c *gin.Context, req ChatRequest, ch chan any, checkpointStart, che
 				Model:      req.Model,
 				CreatedAt:  time.Now().UTC(),
 				Message:    Message{Role: "assistant", Content: chunk.Choices[0].Delta.Content},
+				Done:       false,
+				DoneReason: "",
+				Metrics: Metrics{
+					PromptEvalCount:    int(acc.Usage.PromptTokens),
+					PromptEvalDuration: 10 * time.Millisecond,
+					EvalCount:          int(acc.Usage.CompletionTokens),
+					EvalDuration:       1000 * time.Millisecond,
+				},
+			}
+			ch <- res
+		}
+	}
+
+	if stream.Err() != nil {
+		ch <- gin.H{"error": stream.Err()}
+		return
+	}
+
+	// After the stream is finished, acc can be used like a ChatCompletion
+	// _ = acc.Choices[0].Message.Content
+}
+
+func oai_resp_gen(c *gin.Context, req GenerateRequest, msgs []Message, ch chan any, checkpointStart, checkpointLoaded time.Time) {
+	defer close(ch)
+
+	// 请设置环境变量
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	client := openai.NewClient(
+		option.WithAPIKey("My API Key"), // defaults to os.LookupEnv("OPENAI_API_KEY")
+		option.WithBaseURL(baseURL),
+	)
+
+	myMessage := []openai.ChatCompletionMessageParamUnion{}
+	counter := 0
+	for _, item := range msgs {
+		role := strings.ToLower(item.Role)
+		switch role {
+		case "system":
+			myMessage = append(myMessage, openai.SystemMessage(item.Content))
+			counter += len(item.Content)
+		case "assistant":
+			myMessage = append(myMessage, openai.AssistantMessage(item.Content))
+			counter += len(item.Content)
+		case "user":
+			myMessage = append(myMessage, openai.UserMessage(item.Content))
+			counter += len(item.Content)
+		default: // 如果不符合上面三个
+			myMessage = append(myMessage, openai.UserMessage(item.Content))
+			counter += len(item.Content)
+		}
+	}
+
+	stream := client.Chat.Completions.NewStreaming(c, openai.ChatCompletionNewParams{
+		Messages: myMessage,
+		Model:    "deepseek-reasoner", //这里要修改
+	})
+
+	// optionally, an accumulator helper can be used
+	acc := openai.ChatCompletionAccumulator{}
+
+	for stream.Next() {
+		chunk := stream.Current()
+		acc.AddChunk(chunk)
+
+		if content, ok := acc.JustFinishedContent(); ok {
+			println("Content stream finished:", content)
+			res := GenerateResponse{
+				Model:      req.Model,
+				CreatedAt:  time.Now().UTC(),
+				Response:   "",
+				Done:       true,
+				DoneReason: "stop",
+				Metrics: Metrics{
+					PromptEvalCount:    int(acc.Usage.PromptTokens),
+					PromptEvalDuration: time.Since(checkpointStart),
+					EvalCount:          int(acc.Usage.CompletionTokens),
+					EvalDuration:       checkpointLoaded.Sub(checkpointStart),
+				},
+			}
+			ch <- res
+			// return
+		}
+
+		// it's best to use chunks after handling JustFinished events
+		if len(chunk.Choices) > 0 {
+			// println(chunk.Choices[0].Delta.Content)
+			res := GenerateResponse{
+				Model:      req.Model,
+				CreatedAt:  time.Now().UTC(),
+				Response:   chunk.Choices[0].Delta.Content,
 				Done:       false,
 				DoneReason: "",
 				Metrics: Metrics{
