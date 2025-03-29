@@ -212,6 +212,8 @@ func GenerateHandler(c *gin.Context) {
 		return
 	}
 
+	time.Sleep(5 * time.Second)
+
 	c.JSON(http.StatusOK, GenerateResponse{
 		Model:      req.Model,
 		CreatedAt:  time.Now().UTC(),
@@ -309,7 +311,7 @@ func ChatHandler(c *gin.Context) {
 		go oai_resp(c, req, ch, checkpointStart, checkpointLoaded)
 	}
 
-	if req.Stream != nil && !*req.Stream {
+	if req.Stream == nil || !*req.Stream { //原始逻辑可能有问题 if req.Stream != nil && !*req.Stream {
 		var resp ChatResponse
 		var sb strings.Builder
 		for rr := range ch {
